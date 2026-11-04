@@ -16,15 +16,15 @@
 \newcommand{\safe}{\textsc{safe}}
 \newcommand{\pc}{P-C@1}
 
-\hypersetup{pdftitle={Reward-Induced Verdict Drift Without Discrimination: Two Independent Studies of GRPO for Paired C/C++ Vulnerability Detection},
+\hypersetup{pdftitle={Reward-Induced Verdict Drift Without Discrimination: Two Studies of GRPO for Paired C/C++ Vulnerability Detection},
 pdfauthor={Dhruv Jyoti Das, T. Grace Shalini}}
 
 \begin{document}
 
 \title{Reward-Induced Verdict Drift\\
 Without Discrimination:\\
-Two Independent Studies of GRPO\\
-for Paired C/C++ Vulnerability Detection}
+Two Studies of GRPO for Paired\\
+C/C++ Vulnerability Detection}
 
 \author{Dhruv Jyoti Das$^{*}$ and T. Grace Shalini$^{\dagger}$\\
 $^{*}$Department of Computing Technologies, SRM Institute of Science and Technology, India\\
@@ -36,10 +36,10 @@ Email: gracesht@srmist.edu.in, ORCID: 0000-0002-0016-3702}
 \maketitle
 
 \begin{abstract}
-Reinforcement learning with verifiable rewards (RLVR) is widely used to post-train language models for vulnerability detection, on the premise that a programmatically checkable reward transmits the capability it measures. We test that premise in two independently engineered, pre-registered studies of GRPO on paired C/C++ functions with $\sim$4B-parameter models, and obtain the same answer by different routes.
-\textbf{Study~A} (TraceGRPO) trains Qwen3-4B on a 27,314-row chronological corpus with a teacher-trace SFT cold start and a five-component reward. Three SFT variants learn the output contract (up to 99.68\% parse) yet score at chance (49.3--50.5\% accuracy); production GRPO leaves matched row AUC at $\le0.5163$ with every paired interval including zero; a closed-form equilibrium $q^*=\kappa\Delta_V/(\kappa\Delta_V+\Delta_S)$ predicts the drift of the verdict prior; and a corrected, balanced reward confirms its pre-registered behavioral prediction yet misses its pre-registered discrimination target ($\Delta$AUC $-0.0077$ [$-0.0253$, $+0.0096$]).
-\textbf{Study~B} (VulnGuard) trains from the untrained base on 1,900 pairs, comparing a gold reward with placebo rewards that permute, binarize or flip it. Gold-reward GRPO collapses to an always-\safe{} policy in all three fresh matched seeds and in every historical credit-assignment variant, while the permuted placebo drifts to \vuln{}. On 416 held-out pairs, strict localized pair-correctness is 0.06\% (gold) versus 1.10\% (permuted), a difference of $-1.04$\,pp [$-1.52$, $-0.62$], and 4.30\% for the \emph{untrained} base. Two purpose-built rescues also fail: a constrained verdict-rate clamp, whose cost signal is exactly zero once a group collapses to a single verdict, and a pair-symmetric reward, which relocates the collapse to always-\vuln{}.
-Across both studies every evaluated system lies on the no-discrimination diagonal of $(P(\vuln\mid\text{safe}),P(\vuln\mid\text{vulnerable}))$ space: RL moved the verdict prior, not the discrimination. We give reward-geometry accounts of the direction of that movement and state which claims the evidence does and does not support.
+Reinforcement learning with verifiable rewards (RLVR) is widely used to post-train language models for vulnerability detection, on the premise that a checkable reward transmits the capability it measures. We test this premise in two separately engineered, pre-registered studies of GRPO on paired C/C++ functions with $\sim$4B-parameter models.
+\textbf{Study~A} (TraceGRPO) trains Qwen3-4B on a 27,314-row chronological corpus with a teacher-trace SFT cold start and a five-component reward. Three SFT variants learn the output format (up to 99.68\% parsing) but reach only 49.3--50.5\% validation accuracy; GRPO leaves matched row AUC within 0.007 of the SFT reference (all paired intervals include zero); a closed-form equilibrium predicts the drift of the verdict prior; and a corrected reward confirms its pre-registered behavioral prediction but misses its discrimination target ($\Delta$AUC $-0.0077$).
+\textbf{Study~B} (VulnGuard) trains from the untrained base, comparing a gold reward with placebo rewards. Gold-reward training collapses to always-\safe{} in three fresh matched seeds and in every historical variant, while a permuted placebo drifts to \vuln{}; on 416 held-out pairs, strict pair-correctness is 0.06\% (gold), 1.10\% (permuted) and 4.30\% for the \emph{untrained} base. A verdict-rate clamp and a pair-symmetric reward both fail, the former because its normalized cost term is exactly zero in single-verdict groups.
+In both studies, held-out verdict-rate gaps are at most 0.05 for every system and test AUC is at most 0.531 (0.520 for RL-trained systems), while verdict priors move by tens of points: RL moved the verdict prior, not the discrimination.
 \end{abstract}
 
 \begin{IEEEkeywords}
@@ -49,17 +49,17 @@ Vulnerability detection, large language models, GRPO, reinforcement learning wit
 \section{Introduction}
 \IEEEPARstart{L}{arge} language models are increasingly trained for vulnerability detection with supervised fine-tuning (SFT) on teacher rationales and with reinforcement learning from verifiable rewards, most often a GRPO-family objective~\cite{grpo,vulpo,openvul,r2vul,vulnllmr,simoni}. The implicit premise is that a programmatically checkable reward transmits the capability it measures. Two lines of work make that premise uncomfortable. First, spurious or even random rewards can produce RLVR gains on some reasoning benchmarks~\cite{spurious}, and RL may resample rather than expand what the base model can do~\cite{yue,prorl}. Second, vulnerability benchmarks are known to overstate detector quality once deduplication, chronological splitting and paired evaluation are applied~\cite{primevul,risse,das}.
 
-This paper reports two research studies that were built separately, on overlapping but not identical data, with different pipelines, and that were each run under frozen splits, pre-registered gates and self-executing stop rules:
+This paper reports two research studies by the same authors that were engineered separately, on overlapping but not identical data, with different code bases and training pipelines, and that were each run under frozen splits, pre-registered gates and self-executing stop rules:
 
 \begin{itemize}
 \item \textbf{Study~A, TraceGRPO.} Joint detection, statement localization and source-to-sink trace explanation on a 27,314-row corpus, trained by SFT cold start followed by GRPO on a Qwen3-4B policy with a five-component reward, and evaluated on a strict chronological split with a single-read test set.
 \item \textbf{Study~B, VulnGuard.} A placebo-controlled test of whether the \emph{informativeness} of the reward matters at all: a gold reward is compared with rewards that share all machinery but destroy (permute), weaken (binarize) or invert (flip) the vulnerability signal; two collapse-prevention mechanisms are then tested in a second pre-registered campaign.
 \end{itemize}
 
-Neither study produced a model that discriminates vulnerable from fixed code above chance. What the pair adds beyond two negative results is (i) \emph{agreement across independent pipelines}, which makes a shared pipeline artifact an unlikely explanation, and (ii) a \emph{common mechanistic reading}: in both studies, the reward's expected return to an input-independent policy is structured so as to push the verdict prior, and the observed policy motion follows that push (Section~\ref{sec:geometry}).
+Neither study produced a model whose discrimination is practically distinguishable from chance: the best RL-trained system reaches a test row AUC of 0.520, and the best system overall, a TF-IDF classifier, 0.531. What the pair adds beyond two negative results is (i) \emph{agreement across separately engineered pipelines}, which makes a bug or artifact of one code base an unlikely explanation (the studies share authors, a data source and a model family, so they are not independent replications), and (ii) a \emph{common mechanistic reading}: in both studies, the reward's expected return to an input-independent policy is structured so as to push the verdict prior, and the observed policy motion follows that push (Section~\ref{sec:geometry}).
 
 \textbf{Contributions.}
-(1) A controlled account of SFT and GRPO for paired C/C++ vulnerability detection in two independent pipelines, including a matched three-plus-three-seed placebo cohort.
+(1) A controlled account of SFT and GRPO for paired C/C++ vulnerability detection in two separately engineered pipelines, including a matched three-plus-three-seed placebo cohort.
 (2) A cross-study view in verdict-rate space showing that all trained systems, all placebo arms and the untrained base lie on the no-discrimination diagonal.
 (3) Reward-geometry results for input-independent policies under the gold, pair-symmetric and constrained rewards, tied to logged training trajectories, and a closed-form equilibrium for weighted rewards that predicts verdict-rate drift.
 (4) Two negative results on purpose-built collapse-prevention mechanisms, one with an exact structural explanation.
@@ -93,8 +93,10 @@ $\star$ Initialization & \textbf{SFT cold start} on teacher traces (checkpoint 5
 Output & XML contract: analysis, localization, trace, verdict & $\le$250-word analysis, then \texttt{VERDICT}, \texttt{CWE}, \texttt{LINES}\\
 $\star$ Reward & five components: label gate $\pm1$ with vulnerable-class weight $\kappa{=}1.5$, statement IoU, trace fidelity, small judge term, anti-hacking guard & gold: valid verdict + anchor-line hit on vulnerable, valid \safe{} on patched; placebo arms permute / binarize / flip it\\
 $\star$ Optimizer & LR $10^{-6}$ (later $5{\times}10^{-6}$), $\beta{=}0$, 8 generations, up to 400 steps & LR $2{\times}10^{-5}$, $\beta{=}0$, 8 generations $\times$ 64 prompts, 40--110 planned steps, pair-grouped advantages\\
+Advantage & group-mean advantage, no standard-deviation scaling & pair-group mean with standard-deviation scaling ($\varepsilon{=}10^{-4}$)\\
 Primary metric & row ROC-AUC, pair-cluster bootstrap & strict localized \pc{} (both members correct; vulnerable member with an evidence hit)\\
 Stop rules & tripwires (reward-hacking signature, entropy, single-class collapse) & watchdog (zero-variance groups, low entropy), log-only in the final cohort\\
+LLM judge & Claude Opus (explanation audit) & gpt-oss-20b (calibration and audits)\\
 \bottomrule
 \end{tabular}
 \end{table*}
@@ -103,7 +105,7 @@ Stop rules & tripwires (reward-hacking signature, entropy, single-class collapse
 \label{sec:programA}
 \textbf{Corpus and constraints.} Statement-level annotation coverage is 99.72\% (L1 patch lines and L2 security-relevant context), with data-flow trace ground truth for 70.67\% of L1-covered vulnerable rows. Two measured corpus properties bound every method. Evidence is sparse: the patch-line fraction falls from 20.7\% for functions of at most 30 lines to 4.1\% above 100 lines on TRAIN. And a pair-length shortcut exists: the vulnerable member is shorter in 74.8\% / 82.3\% of TRAIN / VALID pairs.
 
-\textbf{SFT learns the format, not the discrimination.} Three SFT variants all fit the output contract (parse 98.78--99.68\%) and none discriminated (Table~\ref{tab:sft}). Train probes barely exceeded validation accuracy, which rules out simple overfitting; class collapse occurred in both directions (toward \vuln{} under a 10$\times$ label weight, toward \safe{} under the reasoning-first contract). An audit of 30 teacher traces found 16 materially unsupported rationales and 4 explicit metadata leaks, which are distinct findings. Controls separate learnability from contract execution: a label-only control (C-L1) reached 100\% fixed-prefix accuracy on the same 200 rows on which full-contract fitting stalled at 72.0\% (gate $\ge$90\%).
+\textbf{SFT learns the format, not the discrimination.} Three SFT variants all fit the output contract (parse 98.78--99.68\%) yet none exceeded 50.5\% validation accuracy (Table~\ref{tab:sft}). Train probes barely exceeded validation accuracy, which rules out simple overfitting; class collapse occurred in both directions (toward \vuln{} under a 10$\times$ label weight, toward \safe{} under the reasoning-first contract). An audit of 30 teacher traces found 16 materially unsupported rationales and 4 explicit metadata leaks, which are distinct findings. Controls separate learnability from contract execution: a label-only control (C-L1) reached 100\% fixed-prefix accuracy on the same 200 rows on which full-contract fitting stalled at 72.0\% (gate $\ge$90\%).
 
 \begin{table}[t]
 \centering\footnotesize\setlength{\tabcolsep}{3.5pt}
@@ -169,9 +171,9 @@ where $\Delta_c$ is the mean correct-minus-wrong reward on gold class $c$ and $\
 \label{fig:tg}
 \end{figure*}
 
-\textbf{Blinded LLM-judge audit.} A 150-card deck (75 production-GRPO outputs, 75 classical outputs; balanced by gold label and correctness; system identity and gold labels withheld) was graded by a single LLM judge, not by humans. It flagged 56/75 (74.7\%) GRPO-324 rationales as post-hoc rationalization and 23/75 (30.7\%) as asserting at least one code claim absent from the function. Cross-system differences on localization and trace grades are not established (intervals include zero); rates describe the designed sample, not natural prevalence.
+\textbf{Blinded LLM-judge audit.} A 150-card deck (75 production-GRPO outputs, 75 classical outputs; balanced by gold label and correctness; system identity and gold labels withheld) was graded by a single LLM judge (Claude Opus, high reasoning effort), not by humans. It flagged 56/75 (74.7\%) GRPO-324 rationales as post-hoc rationalization and 23/75 (30.7\%) as asserting at least one code claim absent from the function. Cross-system differences on localization and trace grades are not established (intervals include zero); rates describe the designed sample, not natural prevalence.
 
-\textbf{Final single-read TEST.} The chronological TEST split (2,526 rows / 1,263 pairs; 8 samples per row, $T{=}0.8$, seed 42) was read once per registered system (Table~\ref{tab:test}). Only the classical TF-IDF pipeline's accuracy interval excludes 50\%. Production GRPO's reward-induced prior tilt is visible out of sample as an extreme per-class split (18.1\% \safe{} / 82.3\% \vuln{} accuracy) that AUC correctly ignores. Neural-minus-classical paired $\Delta$AUC: SFT $-$0.0142 [$-$0.0278, $-$0.0004]; GRPO $-$0.0107 [$-$0.0249, +0.0038]; balanced $-$0.0135 [$-$0.0280, +0.0008]. Trace validity is unavailable on TEST (0 of 1,263 vulnerable rows had eligible cached graph artifacts) and is reported as not available rather than zero. The classical model's own VALID$\to$TEST AUC decays from 0.570 to 0.531.
+\textbf{Final single-read TEST.} The chronological TEST split (2,526 rows / 1,263 pairs; 8 samples per row, $T{=}0.8$, seed 42) was read once per registered system (Table~\ref{tab:test}). All four row-AUC intervals exclude 0.5 (0.517--0.531), so the signal is statistically detectable but negligible in magnitude; only the classical TF-IDF pipeline's accuracy interval excludes 50\%. Production GRPO's reward-induced prior tilt is visible out of sample as an extreme per-class split (18.1\% \safe{} / 82.3\% \vuln{} accuracy) that AUC correctly ignores. Neural-minus-classical paired $\Delta$AUC: SFT $-$0.0142 [$-$0.0278, $-$0.0004]; GRPO $-$0.0107 [$-$0.0249, +0.0038]; balanced $-$0.0135 [$-$0.0280, +0.0008]. Trace validity is unavailable on TEST (0 of 1,263 vulnerable rows had eligible cached graph artifacts) and is reported as not available rather than zero. The classical model's own VALID$\to$TEST AUC decays from 0.570 to 0.531.
 
 \begin{table}[t]
 \centering\scriptsize\setlength{\tabcolsep}{2.5pt}
@@ -192,7 +194,7 @@ Balanced-200 & 51.4 [49.4, 53.3] & 0.517 [.504, .530] & 41.7 / 61.0\\
 \section{Study B: VulnGuard}
 \label{sec:programB}
 \subsection{Design and pre-registration}
-The study design, primary endpoint and decision rules were frozen on 2026-09-24 before any reported training run. The primary contrast is GOLD versus PERMUTED. PERMUTED computes the same gold content values on the model's own sampled responses and then shuffles them among valid rollouts within each 16-rollout vulnerable-plus-patched pair group; the reward-value multiset is preserved within each group, format reward stays on its originating output, and invalid outputs keep zero content. GOLD and PERMUTED share machinery, data, prompts, initialization, optimizer, seed pairing and evaluation, so the intended intervention is only whether the content value stays attached to its own response. BINARY (verdict-only, not evidence-conditioned) and FLIPPED (inverted gold) are secondary arms and manipulation checks. Training data are PrimeVul~\cite{primevul} and PairVul~\cite{vulrag} pairs.
+The study design, primary endpoint and decision rules were frozen on 2026-09-24 before any confirmatory training run; a small set of feasibility runs that preceded the freeze (synchronization checks and a base-model validation pass) is excluded from all confirmatory analyses and never served as a starting checkpoint. The primary contrast is GOLD versus PERMUTED. PERMUTED computes the same gold content values on the model's own sampled responses and then shuffles them among valid rollouts within each 16-rollout vulnerable-plus-patched pair group; the reward-value multiset is preserved within each group, format reward stays on its originating output, and invalid outputs keep zero content. GOLD and PERMUTED share machinery, data, prompts, initialization, optimizer, seed pairing and evaluation, so the intended intervention is only whether the content value stays attached to its own response. BINARY (verdict-only, not evidence-conditioned) and FLIPPED (inverted gold) are secondary arms and manipulation checks. Training data are PrimeVul~\cite{primevul} and PairVul~\cite{vulrag} pairs.
 
 The primary endpoint is strict localized \pc{} on the PrimeVul time-split test set. For each pair, sample $j$ of the vulnerable function is paired with sample $j$ of the patched one, and the joint is a success iff the vulnerable output earns full gold evidence (verdict \vuln{} plus a hit on an anchor line) \emph{and} the patched output is a valid \safe{} verdict (8 samples per function, $T{=}0.6$, top-$p$ 0.95, at most 640 tokens). The smallest effect of interest is 3.0\,pp and the pre-registered minimum detectable effect is 1.0--1.5\,pp. Invalid outputs are never coerced to \safe{}.
 
@@ -261,6 +263,24 @@ PERM mean & --- & 0.9369 & 0.9340 & 0.5008 & --- & 0.3165 & 0.0110 & ---\\
 
 \textbf{Neither arm beats the untrained base.} On the same 416 test pairs and protocol, the untrained base reaches \pc{} 4.30\% (balanced accuracy 0.476, valid-format rate 0.927), above every fresh arm (Fig.~\ref{fig:pc1}). The historical PERMUTED and BINARY runs (5.53\% and 5.32\%) are near that level, while historical GOLD (0.18\%, 0.12\%) and FLIPPED (0.21\%) are not. The pre-registered contrast H2 (PERMUTED$-$base $>0$) is therefore not met in the fresh cohort. We report these contrasts as descriptive: the cohort is a post-hoc 40-step extension, the formal confirmatory test additionally required a human-validation gate that was not completed, and no $p$-values or multiplicity-adjusted decisions are used.
 
+\textbf{Example outputs.} Table~\ref{tab:examples} shows first-sample completions for one test pair (a qpdf hex decoder, \texttt{Pl\_ASCIIHexDecoder::flush}), for seed 2 of each arm. The GOLD example is the first pair in the evaluation file; for PERMUTED we took the first pair in file order on which the sample answered \vuln{} on both versions, which turned out to be the same pair. The collapsed GOLD policy writes the same boilerplate verdict for the vulnerable and the fixed version. The PERMUTED policy writes a confident vulnerability story for \emph{both} versions, including a claimed integer underflow in code that has been patched. The example illustrates that the arms differ in which corner they occupy, not in how well they use the code; it is a single illustration, not a quantitative result.
+
+\begin{table*}[t]
+\centering\footnotesize
+\caption{Abridged completions (first sample) for one test pair; GOLD seed 2 and PERMUTED seed 2. Ellipses mark omitted text.}
+\label{tab:examples}
+\begin{tabular}{p{1.5cm}p{2.0cm}p{9.9cm}p{1.3cm}}
+\toprule
+Arm & Input & Analysis (abridged) & Verdict\\
+\midrule
+GOLD & vulnerable & ``The function \dots{} is a legitimate and safe function. It processes up to two hex characters from \texttt{inbuf}, converts them \dots{} There are no memory-safety or logic vulnerabilities present.'' & \safe{}\\
+GOLD & patched & ``The function \dots{} is a legitimate and safe function. It processes two hex digits from \texttt{inbuf} \dots{} There are no memory-safety or logic vulnerabilities present.'' & \safe{}\\
+PERMUTED & vulnerable & ``\dots{} The critical vulnerability is on line 17: if \texttt{inbuf[i]} is less than \texttt{'0'}, the subtraction \dots{} could result in negative values \dots{} no bounds checking is performed \dots{}'' & \vuln{}\\
+PERMUTED & patched & ``\dots{} on line 17, if \texttt{inbuf[i]} is less than \texttt{'0'}, the subtraction \dots{} will result in a negative value \dots{} leads to undefined behavior due to signed overflow \dots{} a classic integer underflow \dots{}'' & \vuln{}\\
+\bottomrule
+\end{tabular}
+\end{table*}
+
 \begin{figure}[t]
 \centering
 \includegraphics[width=\columnwidth]{fig_pc1_endpoints.pdf}
@@ -308,17 +328,42 @@ S1d pair/perm. & \vuln{} corner & 0.972 & 0.006 & 60\\
 
 \textbf{Gradient audit.} A fixed-batch audit (16 pairs, 128 rollouts per side) found a patched-to-vulnerable gradient-norm ratio of 1.076 (descriptive range [0.675, 1.957]) and near-zero cross-side cosine ($-0.090$); the policy-effect readout saturated. Simple patched-gradient dominance is not supported, and no causal gradient conclusion is drawn.
 
-\textbf{Judge calibration.} An LLM judge that flags 46 of 50 designated-bad and 1 of 50 designated-good NIST Juliet functions (92\%/2\%) flags 47.6\% (LIKELY or POSSIBLY, $n{=}115$) of real, era-matched C functions from the same projects under an open ``find any vulnerability'' prompt. The 115 functions were checked only against fix-touched files in our training and validation pool, so some may carry untracked vulnerabilities; the gap of about 46 points nevertheless shows that a false-positive floor calibrated on synthetic code can badly underestimate the real-code floor. On \emph{patched} functions the same judge flags 82 of 144 parsed outputs (56.9\%; 56 of 200 unparsed), 9.4\,pp above the real-code floor; this is a flag rate, not an established label-noise rate. Agreement between the deterministic reward and the judge is 226/270 (83.7\%) and is inflated by a floor effect on collapsed outputs. Human validation of the judge and reward labels was prepared but not completed; no human labels enter any reported result.
+\textbf{Judge calibration.} An open-weight LLM judge (gpt-oss-20b) that flags 46 of 50 designated-bad and 1 of 50 designated-good NIST Juliet functions (92\%/2\%) flags 47.6\% (LIKELY or POSSIBLY, $n{=}115$) of real, era-matched C functions from the same projects under an open ``find any vulnerability'' prompt. The 115 functions were checked only against fix-touched files in our training and validation pool, so some may carry untracked vulnerabilities; the gap of about 46 points nevertheless shows that a false-positive floor calibrated on synthetic code can badly underestimate the real-code floor. On \emph{patched} functions the same judge flags 82 of 144 parsed outputs (56.9\%; 56 of 200 unparsed), 9.4\,pp above the real-code floor; this is a flag rate, not an established label-noise rate. Agreement between the deterministic reward and the judge is 226/270 (83.7\%) and is inflated by a floor effect on collapsed outputs. Human validation of the judge and reward labels was prepared but not completed; no human labels enter any reported result.
 
 \section{Cross-Study Synthesis}
 \label{sec:synthesis}
-\subsection{Every system lies on the no-discrimination diagonal}
-Fig.~\ref{fig:roc} plots every held-out TEST system from both studies by $P(\vuln\mid\text{patched/\safe{} input})$ and $P(\vuln\mid\text{vulnerable input})$. A discriminating system lies above the diagonal. None does: the Study~A neural systems and the TF-IDF baseline, the untrained base, four Study~B reward arms, and the extreme corners (GOLD at the origin, FLIPPED and PERMUTED at the top right) all sit on or within sampling noise of it. RL moves a policy \emph{along} the diagonal, from the base's prior near 0.7, to 0.82 in production GRPO, to 0 in GOLD, without lifting it off. This is the quantity that the verdict-rate curves in both studies track. It also explains why accuracy at the argmax is a misleading endpoint: production GRPO's greedy split swung from 30\% to 64\% \vuln{} at chance accuracy, and in Study~B balanced accuracy is 0.500 for GOLD and for PERMUTED despite opposite policies.
+\subsection{Every system's verdict-rate gap is small}
+Fig.~\ref{fig:roc} plots every held-out TEST system from both studies by $P(\vuln\mid\text{patched/\safe{} input})$ and $P(\vuln\mid\text{vulnerable input})$. The vertical distance of a point above the diagonal is the verdict-rate gap $D=P(\vuln\mid\text{vulnerable})-P(\vuln\mid\text{patched})$; a discriminating system has $D>0$. Table~\ref{tab:gap} lists $D$ for each system. The largest gap of any system is 0.051 (the classical TF-IDF baseline); the largest for an RL-trained policy is 0.049 (one historical BINARY run, single seed, no interval); and the fresh GOLD and PERMUTED arms have $D=0.001$ [0.000, 0.002] and $0.003$ [$-0.007$, $+0.013$] (CVE-cluster bootstrap). Several of these gaps are statistically detectable (the test row-AUC intervals of Study~A all exclude 0.5) but none is practically meaningful.
+
+By contrast, position \emph{along} the diagonal---the verdict prior---varies by tens of points: from the base's rate near 0.7, to 0.82 in production GRPO, to 0 in GOLD and about 0.94 in PERMUTED. RL moves a policy along the diagonal without lifting it off. This is the quantity the verdict-rate curves in both studies track, and it explains why accuracy at the argmax is a misleading endpoint: production GRPO's greedy split swung from 30\% to 64\% \vuln{} at chance accuracy, and in Study~B balanced accuracy is 0.500 for GOLD and for PERMUTED despite opposite policies.
+
+\begin{table}[t]
+\centering\scriptsize\setlength{\tabcolsep}{2pt}
+\caption{Verdict-rate gap $D=P(\vuln|\text{vulnerable})-P(\vuln|\text{patched})$ on held-out TEST data, with the study's primary test metric. Study~A: frozen 8-vote rule, point estimates (AUC with pair-cluster 95\% CI). Study~B: per-sample rates; intervals are CVE-cluster bootstrap; fresh arms pool three seeds.}
+\label{tab:gap}
+\begin{tabular}{lcc}
+\toprule
+System & $D$ & AUC / \pc{}\\
+\midrule
+A: Classical TF-IDF & +0.051 & .531 [.524, .537]\\
+A: SFT-500 & +0.032 & .517 [.504, .529]\\
+A: GRPO-324 & +0.005 & .520 [.507, .533]\\
+A: Balanced-200 & +0.028 & .517 [.504, .530]\\
+B: untrained base & +0.026 & \pc{} 4.30\%\\
+B: GOLD fresh (3 seeds) & +0.001 [0, .002] & \pc{} 0.06\%\\
+B: PERMUTED fresh (3 seeds) & +.003 [$-$.007, .013] & \pc{} 1.10\%\\
+B: GOLD historical (s0, s1) & +0.002 & \pc{} 0.18\%, 0.12\%\\
+B: PERMUTED historical (s0) & +0.027 & \pc{} 5.53\%\\
+B: BINARY historical (s0) & +0.049 & \pc{} 5.32\%\\
+B: FLIPPED historical (s0) & +0.003 & \pc{} 0.21\%\\
+\bottomrule
+\end{tabular}
+\end{table}
 
 \begin{figure}[t]
 \centering
 \includegraphics[width=\columnwidth]{fig_roc_space.pdf}
-\caption{Both studies on one plot (held-out TEST sets; aggregation differs: Study~A uses its frozen 8-vote rule per row, Study~B uses per-sample verdict rates). The dashed diagonal marks no discrimination. Study~B's three fresh GOLD runs, two historical GOLD runs and the PERMUTED runs overlap at the corners.}
+\caption{Both studies on one plot (held-out TEST sets; aggregation differs: Study~A uses its frozen 8-vote rule per row, Study~B uses per-sample verdict rates). The vertical distance from the dashed diagonal is the verdict-rate gap $D$ (Table~\ref{tab:gap}). Study~B's three fresh GOLD runs, two historical GOLD runs and the PERMUTED runs overlap at the corners.}
 \label{fig:roc}
 \end{figure}
 
@@ -367,17 +412,51 @@ In Study~A, balancing the reward fixed the behavior to prediction yet left AUC a
 \textbf{Compute accounting.} Appendix~\ref{app:compute} gives the identifiable GPU time; neither study has a certifiable total.
 
 \section{Conclusion}
-Two independent, instrumented studies of one task agree: verifiable rewards verified what they rewarded---the position of the verdict prior and the emission of evidence---and not vulnerability discrimination. Study~A explains the drift with a closed-form equilibrium and shows that fixing the reward fixes the behavior but not the capability. Study~B shows that a gold reward is outperformed on the strict endpoint by a reward that has destroyed the signal and by the untrained base, and that two rescues designed for exactly this failure either fail or relocate it, one for an exact structural reason. Together they place the open problem upstream of reward engineering: obtaining a starting policy that carries input-conditional signal, and measuring it with endpoints that cannot be satisfied by moving a prior.
+Two separately engineered, instrumented studies of one task agree: verifiable rewards verified what they rewarded---the position of the verdict prior and the emission of evidence---and not vulnerability discrimination. Study~A explains the drift with a closed-form equilibrium and shows that fixing the reward fixes the behavior but not the capability. Study~B shows that a gold reward is outperformed on the strict endpoint by a reward that has destroyed the signal and by the untrained base, and that two rescues designed for exactly this failure either fail or relocate it, one for an exact structural reason. Together they place the open problem upstream of reward engineering: obtaining a starting policy that carries input-conditional signal, and measuring it with endpoints that cannot be satisfied by moving a prior.
 
 \section*{Data and Code Availability}
 The frozen data splits, run configurations, per-step reward logs, evaluation outputs and analysis scripts underlying every number reported here are archived by the authors and are available from the corresponding author on reasonable request.
 
+\section*{Declarations}
+\textbf{Ethics.} This work uses only public benchmark code and public vulnerability records. No human subjects, personal data or exploit generation were involved; the models studied are defensive classifiers.
+
+% TODO (authors): add Funding, Competing Interests and Author Contributions statements required by the target journal.
+
+\section*{Acknowledgment}
+AI-assisted tools were used for code development, experiment orchestration and manuscript preparation. The authors reviewed all results and the final text and take full responsibility for the content.
+
 \appendices
 \section{Scope of Claims}
 \label{app:claims}
-\textbf{Supported.} Corpus and split reproducibility from frozen manifests (A); annotation coverage as reported (A); SFT learns the format without transmitting discrimination in three variants (A); label learnability in isolation (A, C-L1); no established AUC gain from production or balanced GRPO (A); the closed-form equilibrium reproduces stored counterfactual values and predicts the observed vote-rate range (A); gold-reward collapse in all fresh and historical variants tested (B); permuted-reward drift toward \vuln{} in the fresh cohort (B); neither fresh arm exceeds the untrained base on strict \pc{} (B); both second-campaign rescues fail their pre-registered gates (B); the clamp's cost term is exactly zero for single-verdict groups (B); every evaluated system lies on the no-discrimination diagonal (A and B).
+\textbf{Supported.} Corpus and split reproducibility from frozen manifests (A); annotation coverage as reported (A); SFT learns the format without transmitting discrimination in three variants (A); label learnability in isolation (A, C-L1); no established AUC gain from production or balanced GRPO (A); the closed-form equilibrium reproduces stored counterfactual values and predicts the observed vote-rate range (A); gold-reward collapse in all fresh and historical variants tested (B); permuted-reward drift toward \vuln{} in the fresh cohort (B); neither fresh arm exceeds the untrained base on strict \pc{} (B); both second-campaign rescues fail their pre-registered gates (B); the clamp's cost term is exactly zero for single-verdict groups (B); every evaluated system has a verdict-rate gap $D\le0.051$, and every RL-trained system $D\le0.049$ (A and B).
 
 \textbf{Not claimed.} That RL improves vulnerability detection or beats classical methods; that all slicing fails or that oracle slices are deployable; any multi-seed claim for the evidence-first detector; any step-400 production evaluation; that GOLD-versus-PERMUTED is a confirmatory test; that near-chance $D$ is a property of open models; that the 56.9\% patched-side flag rate is label noise; that the interior-versus-corner difference between the studies is caused by $\kappa$; that the LLM-judge audits are human grading or natural prevalence; exact compute totals; novelty.
+
+\section{Implementation Details}
+\label{app:impl}
+\begin{table*}[t]
+\centering\scriptsize\setlength{\tabcolsep}{3pt}
+\caption{Configuration of the two studies.}
+\label{tab:impl}
+\begin{tabular}{p{2.3cm}p{6.4cm}|p{2.3cm}p{6.4cm}}
+\toprule
+\multicolumn{2}{c|}{\textbf{Study A: TraceGRPO}} & \multicolumn{2}{c}{\textbf{Study B: VulnGuard}}\\
+\midrule
+Policy & Qwen3-4B; LoRA $r{=}64$, $\alpha{=}128$, dropout 0.05; bf16 & Policy & Qwen3-4B-Instruct-2507 (pinned revision); LoRA $r{=}64$, $\alpha{=}128$, dropout 0.05, all linear layers; bf16, SDPA, gradient checkpointing\\
+Software & torch 2.8.0+cu128, transformers 4.56.2, vLLM 0.10.2, TRL 0.21.0, flash-attn 2.8.3 & Rollouts & vLLM native LoRA serving with a fresh adapter request each step; colocated, GPU memory fraction 0.40\\
+Teacher corpus & Qwen2.5-Coder-32B-Instruct-AWQ; 83 batches, 131,376 rollouts, 98.17\% parsed; 21,409 gold traces covering 11,643 samples; top-up: gold traces for 1,364 more vulnerable samples plus 2,181 silver rows & Batch & 64 prompts (32 pairs) per step, 8 generations per prompt (512 rollouts); micro-batch 4, gradient accumulation 128\\
+SFT set & 10,973 vulnerable (25.07\% silver) and 10,973 safe rows; 393 rows above 8,192 tokens excluded & Optimizer & AdamW, LR $2{\times}10^{-5}$, 10 warm-up steps then constant, weight decay 0, clipping $\varepsilon{=}0.2$, $\beta{=}0$, DAPO token aggregation\\
+SFT (contract v2) & LR $10^{-4}$ cosine, 3\% warm-up, 2 epochs, global batch 64, max length 8,192, prompt tokens masked, seed 42 & Advantages & pair-grouped across the 16 rollouts of a pair; standard-deviation scaling, $\varepsilon{=}10^{-4}$\\
+GRPO & initialized from SFT checkpoint 500; 8 generations $\times$ 64 prompts per step; temperature 1.0; max completion 1,536 tokens; $\beta{=}0$; LR $10^{-6}$ (later $5{\times}10^{-6}$), cosine, 10 warm-up steps; group-mean advantage without standard-deviation scaling; seed 42 & Rollout limits & prompt v2; max prompt 2,560 tokens; max completion 640; temperature 1, top-$p$ 1\\
+Reward & label gate $\pm1$ (vulnerable weight 1.5); statement IoU; trace fidelity; judge term (Qwen2.5-Coder-7B-Instruct, weight 0.2); parse-failure floor & Reward & gold: format term plus content (valid \vuln{} with anchor hit on vulnerable, valid \safe{} on patched); vulnerable scale 1; CAPO $\alpha{=}1$ (off)\\
+Tripwires & parse rate $\ge0.95$; zero-variance groups $\le70\%$; entropy $\ge0.3$ nats; reward-hacking signature & Steps & 40 in the final cohort (110 planned); final-step adapter, no checkpoint selection\\
+Evaluation & all VALID/TEST rows, 8 samples, $T{=}0.8$, $\le$1,536 tokens, seed 42; 5,000 pair-cluster bootstrap replicates & Evaluation & 416 test pairs (832 functions), 8 samples, $T{=}0.6$, top-$p$ 0.95, $\le$640 tokens, seed 1234; 10,000 CVE-cluster bootstrap resamples\\
+ & & Clamp & $d_k{=}0.55$, $\eta{=}0.2$, target band $[0.45,0.55]$\\
+\bottomrule
+\end{tabular}
+\end{table*}
+
+\textbf{Study B prompt (v2, abridged).} ``You are a security auditor for C/C++ code. You will be shown ONE function with line numbers. Decide whether it contains a memory-safety or logic vulnerability of the kind fixed by security patches. Think briefly inside \texttt{<analysis>}$\dots$\texttt{</analysis>} (at most $\sim$250 words). Then output EXACTLY these three lines: \texttt{VERDICT: VULNERABLE or SAFE}; \texttt{CWE: CWE-<id> or NONE}; \texttt{LINES: comma-separated line numbers of the vulnerable statements (1-5 numbers), or NONE}.'' Further format rules require the three lines exactly once after the analysis, at most five line numbers, and \texttt{NONE} values for \safe{} verdicts.
 
 \section{Pre-Registered Hypotheses of Study B}
 H1: GOLD $>$ PERMUTED on \pc{} (one-sided CVE-cluster bootstrap lower bound $>0$ and Holm-adjusted sign-flip $p<.05$); H1-null: equivalence by TOST at 3.0\,pp; H2: PERMUTED $-$ base $>0$; H3: BINARY raises verdict accuracy relative to its \pc{} gain more than GOLD; H4: FLIPPED $<$ base (manipulation check); H5: the GOLD$-$base P-Pass@$k$ gap shrinks with $k$; H6: a base-trained probe transfers to GOLD with $\Delta$AUC $\le0.02$, or fails; H7: placebo gain on Llama $\approx0$. The Holm family is $\{$H1, H2, H4, H1-Llama$\}$. The second campaign used its own numbering (H1--H9); only its hypotheses H3 (discrimination audit), H4 (verdict-rate clamp), H5 (pair-symmetric reward) and H8 (Llama placebo replication) were executed.
