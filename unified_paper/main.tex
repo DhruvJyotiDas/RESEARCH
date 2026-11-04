@@ -8,6 +8,7 @@
 \usepackage{xcolor}
 \usepackage{microtype}
 \usepackage{url}
+\usepackage{placeins}
 \usepackage[hidelinks]{hyperref}
 \usepackage{cite}
 \graphicspath{{figures/}}
@@ -434,27 +435,44 @@ AI-assisted tools were used for code development, experiment orchestration and m
 
 \section{Implementation Details}
 \label{app:impl}
-\begin{table*}[t]
+\begin{table}[!ht]
 \centering\scriptsize\setlength{\tabcolsep}{3pt}
-\caption{Configuration of the two studies.}
-\label{tab:impl}
-\begin{tabular}{p{2.3cm}p{6.4cm}|p{2.3cm}p{6.4cm}}
+\caption{Study A configuration.}
+\label{tab:implA}
+\begin{tabular}{p{1.7cm}p{6.4cm}}
 \toprule
-\multicolumn{2}{c|}{\textbf{Study A: TraceGRPO}} & \multicolumn{2}{c}{\textbf{Study B: VulnGuard}}\\
-\midrule
-Policy & Qwen3-4B; LoRA $r{=}64$, $\alpha{=}128$, dropout 0.05; bf16 & Policy & Qwen3-4B-Instruct-2507 (pinned revision); LoRA $r{=}64$, $\alpha{=}128$, dropout 0.05, all linear layers; bf16, SDPA, gradient checkpointing\\
-Software & torch 2.8.0+cu128, transformers 4.56.2, vLLM 0.10.2, TRL 0.21.0, flash-attn 2.8.3 & Rollouts & vLLM native LoRA serving with a fresh adapter request each step; colocated, GPU memory fraction 0.40\\
-Teacher corpus & Qwen2.5-Coder-32B-Instruct-AWQ; 83 batches, 131,376 rollouts, 98.17\% parsed; 21,409 gold traces covering 11,643 samples; top-up: gold traces for 1,364 more vulnerable samples plus 2,181 silver rows & Batch & 64 prompts (32 pairs) per step, 8 generations per prompt (512 rollouts); micro-batch 4, gradient accumulation 128\\
-SFT set & 10,973 vulnerable (25.07\% silver) and 10,973 safe rows; 393 rows above 8,192 tokens excluded & Optimizer & AdamW, LR $2{\times}10^{-5}$, 10 warm-up steps then constant, weight decay 0, clipping $\varepsilon{=}0.2$, $\beta{=}0$, DAPO token aggregation\\
-SFT (contract v2) & LR $10^{-4}$ cosine, 3\% warm-up, 2 epochs, global batch 64, max length 8,192, prompt tokens masked, seed 42 & Advantages & pair-grouped across the 16 rollouts of a pair; standard-deviation scaling, $\varepsilon{=}10^{-4}$\\
-GRPO & initialized from SFT checkpoint 500; 8 generations $\times$ 64 prompts per step; temperature 1.0; max completion 1,536 tokens; $\beta{=}0$; LR $10^{-6}$ (later $5{\times}10^{-6}$), cosine, 10 warm-up steps; group-mean advantage without standard-deviation scaling; seed 42 & Rollout limits & prompt v2; max prompt 2,560 tokens; max completion 640; temperature 1, top-$p$ 1\\
-Reward & label gate $\pm1$ (vulnerable weight 1.5); statement IoU; trace fidelity; judge term (Qwen2.5-Coder-7B-Instruct, weight 0.2); parse-failure floor & Reward & gold: format term plus content (valid \vuln{} with anchor hit on vulnerable, valid \safe{} on patched); vulnerable scale 1; CAPO $\alpha{=}1$ (off)\\
-Tripwires & parse rate $\ge0.95$; zero-variance groups $\le70\%$; entropy $\ge0.3$ nats; reward-hacking signature & Steps & 40 in the final cohort (110 planned); final-step adapter, no checkpoint selection\\
-Evaluation & all VALID/TEST rows, 8 samples, $T{=}0.8$, $\le$1,536 tokens, seed 42; 5,000 pair-cluster bootstrap replicates & Evaluation & 416 test pairs (832 functions), 8 samples, $T{=}0.6$, top-$p$ 0.95, $\le$640 tokens, seed 1234; 10,000 CVE-cluster bootstrap resamples\\
- & & Clamp & $d_k{=}0.55$, $\eta{=}0.2$, target band $[0.45,0.55]$\\
+Policy & Qwen3-4B; LoRA $r{=}64$, $\alpha{=}128$, dropout 0.05; bf16\\
+Software & torch 2.8.0+cu128, transformers 4.56.2, vLLM 0.10.2, TRL 0.21.0, flash-attn 2.8.3\\
+Teacher corpus & Qwen2.5-Coder-32B-Instruct-AWQ; 83 batches, 131,376 rollouts, 98.17\% parsed; 21,409 gold traces covering 11,643 samples; top-up: gold traces for 1,364 more vulnerable samples plus 2,181 silver rows\\
+SFT set & 10,973 vulnerable (25.07\% silver) and 10,973 safe rows; 393 rows above 8,192 tokens excluded\\
+SFT (contract v2) & LR $10^{-4}$ cosine, 3\% warm-up, 2 epochs, global batch 64, max length 8,192, prompt tokens masked, seed 42\\
+GRPO & initialized from SFT checkpoint 500; 8 generations $\times$ 64 prompts per step; temperature 1.0; max completion 1,536 tokens; $\beta{=}0$; LR $10^{-6}$ (later $5{\times}10^{-6}$), cosine, 10 warm-up steps; group-mean advantage without standard-deviation scaling; seed 42\\
+Reward & label gate $\pm1$ (vulnerable weight 1.5); statement IoU; trace fidelity; judge term (Qwen2.5-Coder-7B-Instruct, weight 0.2); parse-failure floor\\
+Tripwires & parse rate $\ge0.95$; zero-variance groups $\le70\%$; entropy $\ge0.3$ nats; reward-hacking signature\\
+Evaluation & all VALID/TEST rows, 8 samples, $T{=}0.8$, $\le$1,536 tokens, seed 42; 5,000 pair-cluster bootstrap replicates\\
 \bottomrule
 \end{tabular}
-\end{table*}
+\end{table}
+
+\begin{table}[!ht]
+\centering\scriptsize\setlength{\tabcolsep}{3pt}
+\caption{Study B configuration.}
+\label{tab:implB}
+\begin{tabular}{p{1.7cm}p{6.4cm}}
+\toprule
+Policy & Qwen3-4B-Instruct-2507 (pinned revision); LoRA $r{=}64$, $\alpha{=}128$, dropout 0.05, all linear layers; bf16, SDPA, gradient checkpointing\\
+Rollouts & vLLM native LoRA serving with a fresh adapter request each step; colocated, GPU memory fraction 0.40\\
+Batch & 64 prompts (32 pairs) per step, 8 generations per prompt (512 rollouts); micro-batch 4, gradient accumulation 128\\
+Optimizer & AdamW, LR $2{\times}10^{-5}$, 10 warm-up steps then constant, weight decay 0, clipping $\varepsilon{=}0.2$, $\beta{=}0$, DAPO token aggregation\\
+Advantages & pair-grouped across the 16 rollouts of a pair; standard-deviation scaling, $\varepsilon{=}10^{-4}$\\
+Rollout limits & prompt v2; max prompt 2,560 tokens; max completion 640; temperature 1, top-$p$ 1\\
+Reward & gold: format term plus content (valid \vuln{} with anchor hit on vulnerable, valid \safe{} on patched); vulnerable scale 1; CAPO $\alpha{=}1$ (off)\\
+Steps & 40 in the final cohort (110 planned); final-step adapter, no checkpoint selection\\
+Clamp (H4) & $d_k{=}0.55$, $\eta{=}0.2$, target band $[0.45,0.55]$\\
+Evaluation & 416 test pairs (832 functions), 8 samples, $T{=}0.6$, top-$p$ 0.95, $\le$640 tokens, seed 1234; 10,000 CVE-cluster bootstrap resamples\\
+\bottomrule
+\end{tabular}
+\end{table}
 
 \textbf{Study B prompt (v2, abridged).} ``You are a security auditor for C/C++ code. You will be shown ONE function with line numbers. Decide whether it contains a memory-safety or logic vulnerability of the kind fixed by security patches. Think briefly inside \texttt{<analysis>}$\dots$\texttt{</analysis>} (at most $\sim$250 words). Then output EXACTLY these three lines: \texttt{VERDICT: VULNERABLE or SAFE}; \texttt{CWE: CWE-<id> or NONE}; \texttt{LINES: comma-separated line numbers of the vulnerable statements (1-5 numbers), or NONE}.'' Further format rules require the three lines exactly once after the analysis, at most five line numbers, and \texttt{NONE} values for \safe{} verdicts.
 
@@ -465,6 +483,7 @@ H1: GOLD $>$ PERMUTED on \pc{} (one-sided CVE-cluster bootstrap lower bound $>0$
 \label{app:compute}
 Study~A: an identified subtotal of 102.7 GPU or allocated-GPU hours, summed over non-overlapping known entries; incomplete historical allocation means the true total is higher. Study~B: the final-cohort queue recorded 11.8 GPU-job hours of training and 12.8 hours including evaluation; time for earlier phases and for the second campaign was ledgered by phase, but the ledgers do not reconcile exactly, and we make no total claim for Study~B.
 
+\FloatBarrier
 \bibliographystyle{IEEEtran}
 \bibliography{references}
 
