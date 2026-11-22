@@ -31,7 +31,21 @@ train_keys = set(st.inchikey14)
 del meta, st
 prior = PubChemPrior(pop_dir)
 print('MERGER setup', round(time.time() - t0), 's', flush=True)
-D = build_features(root, te, train_keys, prior, analog_index=idx)
+C = None
+if cfg.get('channel_model'):
+    try:
+        import channel as CH
+        from features import molecule_targets
+        CH.init(pop_dir, idx, train_keys)
+        I, C = CH.run_windows(CH.jobs_of(te, molecule_targets(te), 10.0, 300), procs=max(1, min(4, os.cpu_count() or 1)),
+                              log=lambda x: print('MERGER', x, flush=True))
+        C = CH.score(C, cfg['channel_model'])
+        print('MERGER channel', C.shape, round(time.time() - t0), 's', flush=True)
+    except Exception as e:
+        import traceback; traceback.print_exc(); C = None
+        if cfg.get('require_channel'):
+            raise
+D = build_features(root, te, train_keys, prior, analog_index=idx, channel=C, ch_top=int(cfg.get('ch_top', 10)))
 D['abs_ppm'] = D.ppm.abs()
 print('MERGER features', D.shape, round(time.time() - t0), 's', flush=True)
 model = lgb.Booster(model_str=cfg['model'])
@@ -44,27 +58,27 @@ z = lambda v: ((v - v.mean()) / (v.std(ddof=0) + 1e-9)).fillna(0.0)
 D['base'] = -D.log_final_rank
 D['score'] = D.groupby('molecule_id').base.transform(z) + cfg['alpha'] * D.groupby('molecule_id').pred.transform(z)
 sub = pd.read_csv(os.path.join(root, 'submission.csv'), dtype=str, keep_default_na=False)
-out, changed, changed1 = [], 0, 0
+out, changed, changed1, added = [], 0, 0, 0
 for mid, text in zip(sub.molecule_id, sub.smiles):
     old = [s for s in text.split(';') if s]
     g = D[D.molecule_id == mid]
-    if len(g) < 2:
+    if len(g) < 2 or not old:
         out.append(text); continue
-    sc = dict(zip(g.smiles, g.score))
+    g = g.assign(fr=np.where(g.final_rank > 0, g.final_rank, 99)).sort_values(['score', 'fr'], ascending=[False, True])
+    new = list(dict.fromkeys(g.smiles))
     lead_keep = cfg.get('keep1', False) or (cfg.get('lib_keep', 9) <= float(g.lib_max.iloc[0]))
-    order = sorted(range(len(old)), key=lambda i: (-sc.get(old[i], -1e9), i))
-    if cfg.get('margin') is not None and old[0] in sc:
-        best = old[order[0]]
-        if best != old[0] and sc[best] - sc[old[0]] < cfg['margin']:
-            lead_keep = True
-    if lead_keep:
-        order = [0] + [i for i in order if i != 0]
-    new = [old[i] for i in order]
-    changed += new != old; changed1 += new[0] != old[0]
+    sc = dict(zip(g.smiles, g.score))
+    if cfg.get('margin') is not None and old[0] in sc and new[0] != old[0] and sc[new[0]] - sc[old[0]] < cfg['margin']:
+        lead_keep = True
+    if lead_keep and old[0] in sc:
+        new = [old[0]] + [x for x in new if x != old[0]]
+    new += [x for x in old if x not in set(new)]          # stack candidates the feature builder could not parse
+    new = new[:25]
+    changed += new != old[:25]; changed1 += new[0] != old[0]; added += len(set(new) - set(old))
     out.append(';'.join(new))
 res = pd.DataFrame(dict(molecule_id=sub.molecule_id, smiles=out))
 res.to_csv(out_path, index=False)
-json.dump(dict(changed=int(changed), changed_top1=int(changed1), seconds=round(time.time() - t0)),
+json.dump(dict(changed=int(changed), changed_top1=int(changed1), added=int(added), seconds=round(time.time() - t0)),
           open(out_path + '.json', 'w'))
 print('MERGER done: lists changed', changed, 'rank-1 changed', changed1, round(time.time() - t0), 's', flush=True)
 '''
@@ -98,9 +112,11 @@ def _mg_run():
     import pandas as _mg_pd
     a = _mg_pd.read_csv(sub, dtype=str, keep_default_na=False); b = _mg_pd.read_csv(out, dtype=str, keep_default_na=False)
     assert list(a.molecule_id) == list(b.molecule_id)
+    from rdkit import Chem as _mg_Chem
     for x, y in zip(a.smiles, b.smiles):
-        xs, ys = x.split(';'), y.split(';')
-        assert sorted(xs) == sorted(ys) and 1 <= len(ys) <= 25
+        ys = y.split(';')
+        assert 1 <= len(ys) <= 25 and len(set(ys)) == len(ys) and all(ys), 'bad merger list'
+        assert all(_mg_Chem.MolFromSmiles(t) is not None for t in ys if t not in x.split(';')), 'unparseable new SMILES'
     _mg_sh.copy(sub, root / 'submission_pre_merger.csv')
     _mg_sh.copy(out, sub)
     print('[merger] applied', open(str(out) + '.json').read())
@@ -116,12 +132,15 @@ def main():
     ap.add_argument('base'); ap.add_argument('model'); ap.add_argument('out_dir'); ap.add_argument('kernel_id')
     ap.add_argument('--margin', type=float, default=None); ap.add_argument('--alpha', type=float, default=None)
     ap.add_argument('--keep1', action='store_true'); ap.add_argument('--lib_keep', type=float, default=9.0)
+    ap.add_argument('--channel_model', default=None); ap.add_argument('--ch_top', type=int, default=10)
     a = ap.parse_args()
     cfg = json.load(open(a.model))
     if a.alpha is not None:
         cfg['alpha'] = a.alpha
-    cfg.update(margin=a.margin, keep1=a.keep1, lib_keep=a.lib_keep)
-    sources = {n: open(os.path.join(HERE, n)).read() for n in ['analog.py', 'features.py', 'libbuild.py']}
+    cfg.update(margin=a.margin, keep1=a.keep1, lib_keep=a.lib_keep, ch_top=a.ch_top)
+    if a.channel_model:
+        cfg['channel_model'] = open(a.channel_model).read()
+    sources = {n: open(os.path.join(HERE, n)).read() for n in ['analog.py', 'features.py', 'libbuild.py', 'channel.py', 'formula_expl.py']}
     sources['merger_runner.py'] = RUNNER
     cell = CELL % dict(sources=repr(sources), model=repr(json.dumps(cfg)))
     compile(cell, 'merger_cell', 'exec'); compile(RUNNER, 'runner', 'exec')

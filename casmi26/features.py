@@ -96,7 +96,7 @@ def _z(x):
 
 
 def build_features(run_dir, test, train_keys, prior: PubChemPrior | None, analog_index=None, extra_lists=None,
-                   max_extra=0):
+                   max_extra=0, channel=None, ch_top=10):
     """run_dir: stack output dir. test: test.parquet DataFrame. train_keys: set of train standard ik14.
     Returns a candidate DataFrame (one row per molecule x candidate metric key)."""
     sub = pd.read_csv(os.path.join(run_dir, 'submission.csv'), dtype=str, keep_default_na=False)
@@ -115,6 +115,7 @@ def build_features(run_dir, test, train_keys, prior: PubChemPrior | None, analog
     nspec = test.groupby('molecule_id').size().to_dict()
     npos = test.assign(p=test.ionization_mode == 'positive').groupby('molecule_id').p.sum().to_dict()
     evg = {m: g for m, g in ev.groupby('molecule_id')} if len(ev) else {}
+    chg = {m: g.sort_values('ch_rank') for m, g in channel.groupby('molecule_id')} if channel is not None and len(channel) else {}
     nfg = {m: g for m, g in nf.groupby('molecule_id')} if len(nf) else {}
     rows = []
     for m, flist in final.items():
@@ -130,6 +131,9 @@ def build_features(run_dir, test, train_keys, prior: PubChemPrior | None, analog
             extra += (pc.get(m) or {}).get('pc', [])[:25]
         for s in extra:
             cands.append((s, 'extra'))
+        if m in chg:                      # PubChem x analog channel: its top-ch_top structures join the candidate set
+            for s in chg[m].smiles.values[chg[m].ch_rank.values <= ch_top]:
+                cands.append((s, 'ch'))
         # dedupe by metric key, keep first
         seen, uniq = set(), []
         for s, tag in cands:
@@ -140,7 +144,7 @@ def build_features(run_dir, test, train_keys, prior: PubChemPrior | None, analog
         n_final = sum(1 for _, t, _ in uniq if t == 'final')
         if max_extra:
             ext = [u for u in uniq if u[1] == 'extra'][:max_extra]
-            uniq = [u for u in uniq if u[1] == 'final'] + ext
+            uniq = [u for u in uniq if u[1] == 'final'] + ext + [u for u in uniq if u[1] == 'ch']
         if not uniq:
             continue
         # channel ranks by metric key
@@ -214,9 +218,34 @@ def build_features(run_dir, test, train_keys, prior: PubChemPrior | None, analog
             row['_fp'] = fp
             rows.append(row)
     D = pd.DataFrame(rows)
+    if len(D):
+        D = add_channel_features(D, test, channel)
     if analog_index is not None and len(D):
         D = add_analog_features(D, test, analog_index)
     return add_relative_features(D)
+
+
+def add_channel_features(D, test, channel):
+    """Channel score/rank by standard InChIKey-14 (rank 400 = not kept by the channel) and MS2 formula plausibility."""
+    from formula_expl import explained, spectra_of
+    D = D.copy()
+    if channel is not None and len(channel):
+        c = channel.sort_values('ch_rank').drop_duplicates(['molecule_id', 'ik14'])
+        sc = dict(zip(zip(c.molecule_id, c.ik14), c.ch_score)); rk = dict(zip(zip(c.molecule_id, c.ik14), c.ch_rank))
+        k = list(zip(D.molecule_id, D.sk))
+        D['ch_score'] = [sc.get(x, np.nan) for x in k]
+        D['ch_rank'] = [rk.get(x, 400.0) for x in k]
+    else:
+        D['ch_score'] = np.nan; D['ch_rank'] = 400.0
+    fx = []
+    tg = {m: spectra_of(t) for m, t in test.groupby('molecule_id')}
+    cache = {}
+    for m, f in zip(D.molecule_id, D.formula):
+        if (m, f) not in cache:
+            cache[(m, f)] = explained(f, tg.get(m, []))
+        fx.append(cache[(m, f)])
+    D['fexpl'] = fx
+    return D
 
 
 def add_analog_features(D, test, idx, fp_of_key=None):
@@ -245,12 +274,14 @@ def add_relative_features(D):
     for c in ['frozen_rank', 'main_rank', 'eng_rank', 'pc_rank', 'prefusion_rank']:
         D['log_' + c] = np.log(np.where(D[c] > 0, D[c], 80))
     zcols = ['ice', 'gl', 'neural_score', 'neural_cos', 'neural_fp', 'main_score', 'pc_fz', 'pr_lsid', 'pr_lpmid',
-             'pr_lpatent', 'pr_lmesh', 'pr_lsynonyms', 'ap', 'ap_sum', 'ap_best_tan']
+             'pr_lpatent', 'pr_lmesh', 'pr_lsynonyms', 'ap', 'ap_sum', 'ap_best_tan', 'ch_score', 'fexpl']
     for c in zcols:
         if c not in D:
             continue
         D[c + '_z'] = D.groupby('molecule_id')[c].transform(lambda x: pd.Series(_z(x.values), index=x.index))
         D[c + '_gap'] = D[c] - D.groupby('molecule_id')[c].transform('max')
+    D['log_ch_rank'] = np.log(D.ch_rank.astype(float)) if 'ch_rank' in D else np.log(400.0)
+    D['is_ch_only'] = (D.tag == 'ch').astype(int)
     D['pr_pop'] = D.pr_lsid + D.pr_lpmid
     D['pr_vendors'] = np.log1p(D.pr_n_vendors)
     D['pr_deps'] = np.log1p(D.pr_n_depositors)

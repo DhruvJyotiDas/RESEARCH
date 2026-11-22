@@ -24,7 +24,8 @@ BASE_FEATS = ['log_final_rank', 'log_frozen_rank', 'log_main_rank', 'log_eng_ran
               # no depositor-source bits: every pseudo-test truth has public spectra (src_b0 'spectral library') -> leak
               
               'in_pubchem', 'in_train', 'same_formula', 'frac_formula', 'abs_ppm', 'n_heavy', 'lib_max', 'n_spec', 'n_pos',
-              'ap', 'ap_z', 'ap_gap', 'ap_best_tan', 'ap_top_sim', 'ap_sum_z']
+              'ap', 'ap_z', 'ap_gap', 'ap_best_tan', 'ap_top_sim', 'ap_sum_z',
+              'log_ch_rank', 'ch_score_z', 'ch_score_gap', 'fexpl', 'fexpl_gap', 'is_ch_only']
 
 
 def load(spec):
