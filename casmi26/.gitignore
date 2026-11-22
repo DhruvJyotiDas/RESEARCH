@@ -1,0 +1,4 @@
+kernels/
+*.parquet
+*.npz
+*.npy
