@@ -1,0 +1,4 @@
+task_id,repo,base_commit,resolved,patch_chars,test_exit_code,tool_calls,harness_seconds,detail,status,wall_seconds
+fastapi_15661,fastapi/fastapi,ee22a4b8ca46dcce26c8c183afc4992a888d8be2,False,133144,2,8,68.0,,NOT_RESOLVED,68.11
+rich_4070,Textualize/rich,fc41075a3206d2a5fd846c6f41c4d2becab814fa,False,3506,1,21,148.58,,NOT_RESOLVED,148.61
+requests_7505,psf/requests,6f205ff422bccd5e4c4fc0b64c5f3e7df5181db6,False,599,1,6,114.7,,NOT_RESOLVED,114.71
