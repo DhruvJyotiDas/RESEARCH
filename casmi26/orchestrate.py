@@ -13,11 +13,10 @@ COMP = 'enveda-CASMI26-molecule-id-mass-spectra'
 KDIR = '/home/user/RESEARCH/casmi26/kernels'
 # (folder, kernel id, submit after commit?, submission message)
 PLAN = [
-    ('probe_top1', 'dhruvjyoti/casmi26-probe-top1', True, 'probe: keep rank 1 only (top-1 accuracy)'),
-    # submission reruns hold GPU slots for hours: pseudo-test runs (merger training data) go before the extra probes
+    # submission reruns hold GPU slots for hours: pseudo-test runs (merger training data) go before any probe submission
     ('pseudo_v1', 'dhruvjyoti/casmi26-pseudotest-run-v1', False, ''),
-    ('pseudo_v2', 'dhruvjyoti/casmi26-pseudotest-run-v2', False, ''),
     ('pseudo_v3', 'dhruvjyoti/casmi26-pseudotest-run-v3', False, ''),
+    ('probe_top1', 'dhruvjyoti/casmi26-probe-top1', True, 'probe: keep rank 1 only (top-1 accuracy)'),
     ('probe_trainonly', 'dhruvjyoti/casmi26-probe-trainonly', True, 'probe: keep only train-structure candidates (class-1 share)'),
     ('probe_poolonly', 'dhruvjyoti/casmi26-probe-poolonly', True, 'probe: keep only pool (train+COCONUT) candidates'),
 ]
