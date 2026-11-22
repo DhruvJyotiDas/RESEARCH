@@ -40,7 +40,7 @@ for f in cfg['feats']:
         D[f] = np.nan
 pred = model.predict(D[cfg['feats']].astype(float))
 D['pred'] = pred
-z = lambda v: (v - v.mean()) / (v.std() + 1e-9)
+z = lambda v: ((v - v.mean()) / (v.std(ddof=0) + 1e-9)).fillna(0.0)
 D['base'] = -D.log_final_rank
 D['score'] = D.groupby('molecule_id').base.transform(z) + cfg['alpha'] * D.groupby('molecule_id').pred.transform(z)
 sub = pd.read_csv(os.path.join(root, 'submission.csv'), dtype=str, keep_default_na=False)

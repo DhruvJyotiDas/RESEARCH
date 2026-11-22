@@ -14,11 +14,15 @@ KDIR = '/home/user/RESEARCH/casmi26/kernels'
 # (folder, kernel id, submit after commit?, submission message)
 PLAN = [
     ('probe_top1', 'dhruvjyoti/casmi26-probe-top1', True, 'probe: keep rank 1 only (top-1 accuracy)'),
+    # submission reruns hold GPU slots for hours: pseudo-test runs (merger training data) go before the extra probes
+    ('pseudo_v1', 'dhruvjyoti/casmi26-pseudotest-run-v1', False, ''),
+    ('pseudo_v2', 'dhruvjyoti/casmi26-pseudotest-run-v2', False, ''),
+    ('pseudo_v3', 'dhruvjyoti/casmi26-pseudotest-run-v3', False, ''),
     ('probe_trainonly', 'dhruvjyoti/casmi26-probe-trainonly', True, 'probe: keep only train-structure candidates (class-1 share)'),
     ('probe_poolonly', 'dhruvjyoti/casmi26-probe-poolonly', True, 'probe: keep only pool (train+COCONUT) candidates'),
-    ('pseudo_v2', 'dhruvjyoti/casmi26-pseudotest-run-v2', False, ''),
 ]
-ALREADY_PUSHED = {'dhruvjyoti/casmi26-probe-top1'}
+ALREADY_PUSHED = {'dhruvjyoti/casmi26-probe-top1', 'dhruvjyoti/casmi26-pseudotest-run-v1'}
+OUT = '/home/user/kaggle_out'
 
 
 def sh(*args):
@@ -45,7 +49,8 @@ def allowed_now():
 
 def main(state_path):
     st = json.load(open(state_path)) if os.path.exists(state_path) else {}
-    st.setdefault('pushed', sorted(ALREADY_PUSHED)); st.setdefault('submitted', [])
+    st.setdefault('pushed', []); st.setdefault('submitted', []); st.setdefault('downloaded', [])
+    st['pushed'] = sorted(set(st['pushed']) | ALREADY_PUSHED)
     while True:
         todo = False
         for folder, kid, submit, msg in PLAN:
@@ -68,6 +73,14 @@ def main(state_path):
                 elif s in ('ERROR', 'CANCEL'):
                     print(time.strftime('%H:%M'), kid, 'failed with', s, flush=True)
                     st['submitted'].append(kid)
+            elif not submit and kid not in st['downloaded']:
+                todo = True
+                s = status(kid)
+                if s in ('COMPLETE', 'ERROR', 'CANCEL'):
+                    d = os.path.join(OUT, folder); os.makedirs(d, exist_ok=True)
+                    out = sh('kaggle', 'kernels', 'output', kid, '-p', d)
+                    print(time.strftime('%H:%M'), kid, s, 'downloaded ->', d, out[-100:], flush=True)
+                    st['downloaded'].append(kid)
         json.dump(st, open(state_path, 'w'), indent=1)
         if not todo:
             print('all done', flush=True)

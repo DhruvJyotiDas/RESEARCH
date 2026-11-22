@@ -92,8 +92,23 @@ for k in keys:
         break
 c1 = pd.concat(keep)
 print('class-1 structures', c1.ik14.nunique(), 'tested', tested)
-c2 = df[~df.ik14.isin(train_keys)]
-c2 = c2[c2.ik14.isin(set(pd.Series(c2.ik14.unique()).sample(n=min(400 - c1.ik14.nunique(), c2.ik14.nunique()), random_state=9)))]
+c2 = df[~df.ik14.isin(train_keys)].copy()
+# NP-like stratification: the hidden test is Enveda natural products, so most class-2 queries should be structures in the
+# COCONUT/LOTUS candidate pool; no source library may supply more than 20% of them (v3 draft was 290 alkylamines)
+sys.path.insert(0, '/home/user/RESEARCH/casmi26')
+from analyze_pseudo import key as metric_key
+pool_keys = set(pd.read_parquet('/home/user/data/pool/pool_meta.parquet', columns=['key']).key)
+st = c2.drop_duplicates('ik14')[['ik14', 'smiles', 'src']].copy()
+st['lib'] = st.src.str.split(':').str[-1]
+st['in_pool'] = st.smiles.map(metric_key).isin(pool_keys)
+n2 = 400 - c1.ik14.nunique()
+n_pool = min(int(round(0.7 * n2)), int(st.in_pool.sum()))
+cap = max(5, int(0.2 * n2))
+st = st.sample(frac=1, random_state=9)
+st = st[st.groupby('lib').cumcount() < cap]
+pick = pd.concat([st[st.in_pool].head(n_pool), st[~st.in_pool].head(n2 - n_pool)])
+print('class-2 in pool', int(pick.in_pool.sum()), 'of', len(pick)); print(pick.lib.value_counts().head(12))
+c2 = c2[c2.ik14.isin(set(pick.ik14))]
 df = pd.concat([c1.assign(cls=1), c2.assign(cls=2)])
 df = df.sample(frac=1, random_state=3)
 df['b'] = df.ik14 + '|' + df.adduct

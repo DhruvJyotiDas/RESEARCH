@@ -87,7 +87,7 @@ def main(out_path, *specs):
         m = lgb.train(params, dt, 600, valid_sets=[dv], callbacks=[lgb.early_stopping(60, verbose=False)])
         iters.append(m.best_iteration)
         oof[va] = m.predict(Dv[feats], num_iteration=m.best_iteration)
-    z = lambda x: pd.Series(x).groupby(D.gid).transform(lambda v: (v - v.mean()) / (v.std() + 1e-9)).values
+    z = lambda x: pd.Series(x).groupby(D.gid).transform(lambda v: ((v - v.mean()) / (v.std(ddof=0) + 1e-9)).fillna(0.0)).values
     print('model alone        MRR %.4f top1 %.4f' % mrr_of(D, oof, n_total))
     best = (mrr_of(D, base, n_total)[0], 0.0)
     for a in [0.25, 0.5, 1.0, 2.0, 4.0]:
