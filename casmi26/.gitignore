@@ -2,3 +2,4 @@ kernels/
 *.parquet
 *.npz
 *.npy
+__pycache__/
