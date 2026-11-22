@@ -24,11 +24,12 @@ def main(pdir, labels, out, ppm=10.0, keep=300, lib=os.environ.get('CH_LIB', '/h
     truth = dict(zip(lab.molecule_id, lab.ik14))
     st = pd.read_parquet(lib + '_meta.parquet',
                          columns=['inchikey14', 'normalized_smiles', 'molecular_formula']).drop_duplicates('inchikey14')
+    st['molecular_formula'] = st.molecular_formula.astype(str)
     train_keys = set(pd.read_parquet('/home/user/data/trainlib_meta.parquet', columns=['inchikey14']).inchikey14)
     idx = AnalogIndex(lib + '_peaks.npz', lib + '_meta.parquet',
                       dict(zip(st.inchikey14, st.molecular_formula.map(libbuild.formula_mass))),
                       smiles_of=dict(zip(st.inchikey14, st.normalized_smiles)))
-    channel.init('/home/user/data/pop', idx, train_keys)
+    channel.init('/home/user/data/pop', idx, train_keys, dict(zip(st.inchikey14, st.molecular_formula)))
     src = dict(zip(lab.molecule_id, libbuild.src_token(lab.src))) if os.environ.get('CH_LOSO') else {}
     jobs = [j + (truth[j[0]], (src[j[0]],) if j[0] in src else ()) for j in channel.jobs_of(te, molecule_targets(te), ppm, keep)]
     I, D = channel.run_windows(jobs)

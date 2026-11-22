@@ -28,6 +28,7 @@ idx = AnalogIndex(os.path.join(root, 'merger_trainlib_peaks.npz'), os.path.join(
                   dict(zip(st.inchikey14, st.molecular_formula.map(libbuild.formula_mass))),
                   smiles_of=dict(zip(st.inchikey14, st.normalized_smiles)))
 train_keys = set(st.inchikey14)
+formula_of = dict(zip(st.inchikey14, st.molecular_formula.astype(str)))
 del meta, st
 prior = PubChemPrior(pop_dir)
 print('MERGER setup', round(time.time() - t0), 's', flush=True)
@@ -36,7 +37,7 @@ if cfg.get('channel_model'):
     try:
         import channel as CH
         from features import molecule_targets
-        CH.init(pop_dir, idx, train_keys)
+        CH.init(pop_dir, idx, train_keys, formula_of)
         I, C = CH.run_windows(CH.jobs_of(te, molecule_targets(te), 10.0, 300), procs=max(1, min(4, os.cpu_count() or 1)),
                               log=lambda x: print('MERGER', x, flush=True))
         C = CH.score(C, cfg['channel_model'])

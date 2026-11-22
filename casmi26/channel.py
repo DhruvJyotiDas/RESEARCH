@@ -15,7 +15,7 @@ from rdkit import Chem, RDLogger
 from rdkit.Chem import rdFingerprintGenerator, rdMolDescriptors
 
 from analog import ap_scores
-from formula_expl import explained
+from formula_expl import explained, parse
 
 RDLogger.DisableLog('rdApp.*')
 PRIORS = ['lsid', 'lpmid', 'lpatent', 'lmesh', 'lsynonyms', 'n_vendors', 'n_depositors', 'np', 'src_mask', 'lotus_refs',
@@ -25,7 +25,7 @@ HAND = ['s_pop', 's_ap', 's_ap_pop', 's_ap_pop_np', 's_ap_pop_np_fx']
 # all have public spectra, which inflates those fields)
 FEATS = ['ap', 'ap_sum', 'ap_top_tan', 'ap_best_tan', 'ap_top_sim', 'abs_ppm', 'fexpl', 'fexpl_gap', 'n_formulas', 'n_heavy',
          'pr_lsid', 'np_coconut', 'np_lotus', 'np_npatlas', 'in_train', 'ap_z', 'ap_gap', 'pop_z', 'pop_gap', 'ap_rank',
-         'pop_rank', 'n_window_log']
+         'pop_rank', 'n_window_log', 'fdelta', 'fdelta_gap']
 G = {}
 
 
@@ -39,12 +39,31 @@ def _find(root, name):
     return sorted(hits, key=len)[0]
 
 
-def init(pop_root, analog_index, train_keys):
+def init(pop_root, analog_index, train_keys, formula_of=None):
     G['fpg'] = rdFingerprintGenerator.GetMorganGenerator(radius=2, fpSize=2048)
     for n in ['mass', 'off', 'smiles', 'ik14'] + PRIORS:
         G[n] = np.load(_find(pop_root, f'pc_{n}.npy'), mmap_mode='r')
     G['idx'] = analog_index
     G['train_keys'] = train_keys
+    G['formula_of'] = formula_of or {}
+
+
+def _cx(fa, fb):
+    a, b = parse(fa), parse(fb)
+    if a is None or b is None:
+        return 99.0
+    return sum(abs(a.get(k, 0) - b.get(k, 0)) * (0.5 if k == 'H' else 1.0) for k in set(a) | set(b))
+
+
+def fdelta(formulas, an, top=10):
+    """Per candidate formula: max over the top analogs of sim^4 * exp(-delta_complexity/2), where delta_complexity counts
+    atoms changed between candidate and analog formula (H half weight): simple modifications (+O, +CH2) score high."""
+    if an is None or not len(an) or not G.get('formula_of'):
+        return {f: 0.0 for f in formulas}
+    a = an.head(top)
+    af = [G['formula_of'].get(k, '') for k in a.key]
+    w = a.sim.values ** 4
+    return {f: float(max(wi * np.exp(-_cx(f, x) / 2.0) for x, wi in zip(af, w))) for f in formulas}
 
 
 def _z(x):
@@ -89,6 +108,7 @@ def window(args):
     D['fexpl'] = D.formula.map(fx).astype(float)
     D['fexpl_gap'] = D.fexpl - np.nanmax(D.fexpl.values) if D.fexpl.notna().any() else np.nan
     D['n_formulas'] = len(fx)
+    D['fdelta'] = D.formula.map(fdelta(list(fx), an)).astype(float)
     pop = D.pr_lsid.values
     D['s_pop'] = pop
     D['s_ap'] = D.ap.values
@@ -125,6 +145,8 @@ def add_rel(D):
     D['ap_rank'] = np.log1p(g.ap.rank(ascending=False))
     D['pop_rank'] = np.log1p(g.pr_lsid.rank(ascending=False))
     D['n_window_log'] = np.log1p(D.n_window)
+    if 'fdelta' in D:
+        D['fdelta_gap'] = D.fdelta - D.groupby('molecule_id').fdelta.transform('max')
     return D
 
 
