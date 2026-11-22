@@ -20,7 +20,9 @@ BASE_FEATS = ['log_final_rank', 'log_frozen_rank', 'log_main_rank', 'log_eng_ran
               'ice_z', 'ice_gap', 'gl_z', 'gl_gap', 'neural_score_z', 'neural_score_gap', 'neural_cos_z', 'neural_fp_z',
               'main_score_z', 'pc_fz_z', 'pc_fz_gap',
               'pr_pop', 'pr_pop_gap', 'pr_lsid_z', 'pr_lpmid_z', 'pr_lpatent', 'pr_lmesh', 'pr_lsynonyms', 'pr_vendors',
-              'pr_deps', 'pr_lotus', 'pr_iso', 'np_coconut', 'np_lotus', 'np_npatlas'] + [f'src_b{b}' for b in range(9)] + [
+              'pr_deps', 'pr_lotus', 'pr_iso', 'np_coconut', 'np_lotus', 'np_npatlas'] + [
+              # no depositor-source bits: every pseudo-test truth has public spectra (src_b0 'spectral library') -> leak
+              
               'in_pubchem', 'in_train', 'same_formula', 'frac_formula', 'abs_ppm', 'n_heavy', 'lib_max', 'n_spec', 'n_pos',
               'ap', 'ap_z', 'ap_gap', 'ap_best_tan', 'ap_top_sim', 'ap_sum_z']
 
