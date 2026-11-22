@@ -92,6 +92,31 @@ old_sha = 'd1e757c2b71b46e6e8a5777f14302a4737d0fdbcd56d8365093c039b93c5fd88'
 text = replace_once(text, f"FROZEN_SHA256 = '{old_sha}'", f"FROZEN_SHA256 = '{new_sha}'", 'FROZEN_SHA256')
 set_src(PINNED, text)
 
+# ---------------------------------------------------------------- 2b. export_evidence: also dump channel lists
+tree2 = ast.parse(text)
+mod_src = None
+for n in ast.walk(tree2):
+    if isinstance(n, ast.Assign) and isinstance(n.targets[0], ast.Subscript) and getattr(n.targets[0].slice, 'value', None) == 'export_evidence.py':
+        mod_src = n.value.value
+assert mod_src is not None
+EXTRA = """
+    try:
+        import pickle
+        dump = dict(BASE=scope.get('BASE'), ICE=scope.get('ICE_SCORES'), PREFUSION=scope.get('PREFUSION_LISTS'),
+                    ENG=scope.get('ENG'), GL={m: scope['gl_of'](m) for m in processed} if 'gl_of' in scope else None)
+        pickle.dump(dump, open(root/'union_channels.pkl', 'wb'))
+        print('UNION CHANNELS EXPORTED', len(dump['BASE'] or {}), flush=True)
+    except Exception as exc:
+        print('UNION EXPORT FAILED', repr(exc), flush=True)
+"""
+new_mod = mod_src.rstrip('\n') + '\n' + EXTRA
+compile(new_mod, 'export_evidence', 'exec')
+old_mod_sha = hashlib.sha256(mod_src.encode('utf-8')).hexdigest()
+new_mod_sha = hashlib.sha256(new_mod.encode('utf-8')).hexdigest()
+text = replace_once(text, repr(mod_src), repr(new_mod), 'export_evidence literal')
+assert text.count(old_mod_sha) == 1, 'export_evidence sha pin not found once'
+text = text.replace(old_mod_sha, new_mod_sha)
+set_src(PINNED, text)
 # ---------------------------------------------------------------- 3. extlib overlay exclusion
 OV = 30
 t = src(OV)

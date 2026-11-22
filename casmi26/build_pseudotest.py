@@ -6,6 +6,10 @@ Labels are written to a separate file that is never uploaded with the pseudo-tes
 import re, hashlib, json, numpy as np, pandas as pd
 from rdkit import Chem, RDLogger
 RDLogger.DisableLog('rdApp.*')
+import sys
+VER = sys.argv[1] if len(sys.argv) > 1 else 'v1'
+PREV = [pd.read_csv(p).ik14 for p in sys.argv[2:]]
+prev_keys = set(pd.concat(PREV)) if PREV else set()
 rng = np.random.default_rng(20261122)
 TA = ['[M+H]+','[M+NH4]+','[M-H2O+H]+','[M-2H2O+H]+','[M+Na]+','[M+K]+','[M-H]-','[M-H2O-H]-','[M+CH2O2-H]-','[M+Cl]-']
 AMAP = {'[M+H-H2O]+': '[M-H2O+H]+', '[M+H-2H2O]+': '[M-2H2O+H]+', '[M-H-H2O]-': '[M-H2O-H]-', '[M+HCOO]-': '[M+CH2O2-H]-',
@@ -40,7 +44,10 @@ for r in b.itertuples(index=False):
 m = pd.read_parquet('/home/user/data/ext/extlib/ext_meta.parquet')
 MZ = np.load('/home/user/data/ext/extlib/ext_mz.npy', mmap_mode='r'); IN = np.load('/home/user/data/ext/extlib/ext_in.npy', mmap_mode='r')
 m['adduct'] = m.adduct.replace(AMAP)
+mult = m[m.source_library.str.startswith('MULTIPLEX') & m.adduct.isin(TA) & ~m.inchikey14.isin(train_keys)]
+mult = mult[mult.inchikey14.isin(set(pd.Series(mult.inchikey14.unique()).sample(n=min(160, mult.inchikey14.nunique()), random_state=7)))] if VER != 'v1' else mult.iloc[:0]
 sel = m[~m.source_library.str.startswith('MULTIPLEX') & m.adduct.isin(TA) & ~m.inchikey14.isin(train_keys)]
+sel = pd.concat([sel, mult])
 for i, r in sel.iterrows():
     mz = np.asarray(MZ[i], float); it = np.asarray(IN[i], float); ok = (mz > 0) & (it > 0)
     rows.append(dict(src='ext:' + r.source_library, ik14=r.inchikey14, smiles=r.normalized_smiles, adduct=r.adduct,
@@ -70,9 +77,10 @@ df = df[df.ppm.abs() <= 20]
 df['family'] = df.src.str.replace(r'-PART\d|:.*ALKYLAMINES.*', ':ALKYLAMINES', regex=True)
 print(df.groupby('src').ik14.nunique().sort_values(ascending=False).head(25))
 # choose structures: cap alkylamines, keep everything else; then cap spectra per structure at 6 (diverse adduct/CE)
+df = df[~df.ik14.isin(prev_keys)]
 st = df.groupby('ik14').agg(src=('src', 'first'), n=('src', 'size')).reset_index()
 alk = st[st.src.str.contains('ALKYLAMINES')]; other = st[~st.src.str.contains('ALKYLAMINES')]
-alk = alk.sample(n=min(70, len(alk)), random_state=1)
+alk = alk.sample(n=min(70 if VER == 'v1' else 90, len(alk)), random_state=1 if VER == 'v1' else 11)
 keep = pd.concat([other, alk])
 if len(keep) > 420: keep = keep.sample(n=420, random_state=2)
 df = df[df.ik14.isin(set(keep.ik14))]
@@ -80,7 +88,7 @@ df = df.sample(frac=1, random_state=3)
 df['b'] = df.ik14 + '|' + df.adduct + '|' + df.ce.map(lambda c: str(round(c[0] / 10)))
 df = df.drop_duplicates('b')
 df = df[df.groupby('ik14').cumcount() < 6]
-mol_id = {k: 'm_' + hashlib.md5(('pt' + k).encode()).hexdigest()[:6] for k in df.ik14.unique()}
+mol_id = {k: 'm_' + hashlib.md5(('pt' + VER + k).encode()).hexdigest()[:6] for k in df.ik14.unique()}
 out = pd.DataFrame(dict(
     molecule_id=df.ik14.map(mol_id).values,
     spectrum_id=['s_' + hashlib.md5(f'{k}{i}'.encode()).hexdigest()[:8] for i, k in enumerate(df.ik14)],
@@ -89,10 +97,10 @@ out = pd.DataFrame(dict(
     collision_energy_orig=[','.join(str(int(round(x))) for x in c) for c in df.ce], collision_energy_ev=list(df.ce),
     collision_energy_orig_units='eV'))
 out = out.sample(frac=1, random_state=4).reset_index(drop=True)
-out.to_parquet('/home/user/data/pseudo/test.parquet', index=False)
-pd.DataFrame(dict(molecule_id=sorted(out.molecule_id.unique()), smiles='CCO')).to_csv('/home/user/data/pseudo/sample_submission.csv', index=False)
+out.to_parquet(f'/home/user/data/pseudo_{VER}/test.parquet', index=False)
+pd.DataFrame(dict(molecule_id=sorted(out.molecule_id.unique()), smiles='CCO')).to_csv(f'/home/user/data/pseudo_{VER}/sample_submission.csv', index=False)
 lab = df.drop_duplicates('ik14')[['ik14', 'smiles', 'src']].assign(molecule_id=lambda d: d.ik14.map(mol_id))
-lab.to_csv('/home/user/data/pseudo_labels_v1.csv', index=False)
-open('/home/user/data/pseudo/exclude_ik14.txt', 'w').write('\n'.join(sorted(lab.ik14)))
+lab.to_csv(f'/home/user/data/pseudo_labels_{VER}.csv', index=False)
+open(f'/home/user/data/pseudo_{VER}/exclude_ik14.txt', 'w').write('\n'.join(sorted(lab.ik14)))
 print('molecules', out.molecule_id.nunique(), 'spectra', len(out)); print(out.adduct.value_counts()); print(lab.src.str.split(':').str[0].value_counts())
 print(out.groupby('molecule_id').size().describe())
