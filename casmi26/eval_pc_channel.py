@@ -17,18 +17,20 @@ from analog import AnalogIndex
 from features import molecule_targets
 
 
-def main(pdir, labels, out, ppm=10.0, keep=300):
+def main(pdir, labels, out, ppm=10.0, keep=300, lib=os.environ.get('CH_LIB', '/home/user/data/trainlib')):
     t0 = time.time()
     te = pd.read_parquet(os.path.join(pdir, 'test.parquet'))
     lab = pd.read_csv(labels)
     truth = dict(zip(lab.molecule_id, lab.ik14))
-    st = pd.read_parquet('/home/user/data/trainlib_meta.parquet',
+    st = pd.read_parquet(lib + '_meta.parquet',
                          columns=['inchikey14', 'normalized_smiles', 'molecular_formula']).drop_duplicates('inchikey14')
-    idx = AnalogIndex('/home/user/data/trainlib_peaks.npz', '/home/user/data/trainlib_meta.parquet',
+    train_keys = set(pd.read_parquet('/home/user/data/trainlib_meta.parquet', columns=['inchikey14']).inchikey14)
+    idx = AnalogIndex(lib + '_peaks.npz', lib + '_meta.parquet',
                       dict(zip(st.inchikey14, st.molecular_formula.map(libbuild.formula_mass))),
                       smiles_of=dict(zip(st.inchikey14, st.normalized_smiles)))
-    channel.init('/home/user/data/pop', idx, set(st.inchikey14))
-    jobs = [j + (truth[j[0]],) for j in channel.jobs_of(te, molecule_targets(te), ppm, keep)]
+    channel.init('/home/user/data/pop', idx, train_keys)
+    src = dict(zip(lab.molecule_id, libbuild.src_token(lab.src))) if os.environ.get('CH_LOSO') else {}
+    jobs = [j + (truth[j[0]], (src[j[0]],) if j[0] in src else ()) for j in channel.jobs_of(te, molecule_targets(te), ppm, keep)]
     I, D = channel.run_windows(jobs)
     D['y'] = (D.ik14 == D.molecule_id.map(truth)).astype(int)
     I.to_csv(out.replace('.parquet', '_info.csv'), index=False)

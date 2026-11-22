@@ -57,6 +57,7 @@ def window(args):
     force_ik14 (offline evaluation only) keeps that structure's row whatever its scores. Returns (info, DataFrame|None)."""
     mid, target, spectra, fspec, ppm, keep = args[:6]
     force = args[6] if len(args) > 6 else None
+    ex_src = args[7] if len(args) > 7 else ()
     t0 = time.time()
     lo = int(np.searchsorted(G['mass'], target * (1 - ppm * 1e-6)))
     hi = int(np.searchsorted(G['mass'], target * (1 + ppm * 1e-6)))
@@ -74,7 +75,8 @@ def window(args):
         fps.append(G['fpg'].GetFingerprintAsNumPy(m).astype(bool)); ok[i] = True
         fml[i] = rdMolDescriptors.CalcMolFormula(m); nh[i] = m.GetNumHeavyAtoms()
     fp = np.stack(fps)
-    an = G['idx'].search(spectra, target) if spectra else None
+    an = G['idx'].search(spectra, target, exclude_ext_keys=(force,) if force else (),
+                                  exclude_ext_src=ex_src) if spectra else None
     f = ap_scores(fp, an, G['idx'].fp_of_key)
     D = pd.DataFrame(dict(molecule_id=mid, row=rows, ik14=np.asarray(G['ik14'][lo:hi]).astype(str), smiles=smis,
                           formula=fml, n_heavy=nh, ppm=(np.asarray(G['mass'][lo:hi]) - target) / target * 1e6))

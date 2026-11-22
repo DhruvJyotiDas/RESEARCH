@@ -96,19 +96,25 @@ class AnalogIndex:
         self._fpc = {}
         d = np.load(peaks_npz)
         self.mz, self.it_raw, self.off = d['mz'].astype(np.float64), d['it'], d['off']
-        meta = pd.read_parquet(meta_parquet, columns=['ingest_lib', 'inchikey14', 'ionization_mode', 'adduct', 'precursor_mz'])
+        import pyarrow.parquet as _pq
+        cols = ['ingest_lib', 'inchikey14', 'ionization_mode', 'adduct', 'precursor_mz']
+        has_src = 'src' in _pq.read_schema(meta_parquet).names
+        meta = pd.read_parquet(meta_parquet, columns=cols + (['src'] if has_src else []))
+        if not has_src:
+            meta['src'] = meta.ingest_lib.astype(str)
         meta['n'] = np.diff(self.off)
         meta['mode'] = np.where(meta.ionization_mode.astype(str) == 'positive', 1, -1)
         meta['mass'] = meta.inchikey14.map(struct_mass)
         meta = meta[meta.mass.notna() & (meta.n >= 3)]
         # representative: most peaks per (structure, mode, lib)
-        meta = meta.sort_values('n', ascending=False).drop_duplicates(['inchikey14', 'mode', 'ingest_lib'])
+        meta = meta.sort_values('n', ascending=False).drop_duplicates(['inchikey14', 'mode', 'src'])
         meta = meta.sort_values('mass')
         self.rep = meta.index.values.astype(np.int64)
         self.rep_key = meta.inchikey14.values.astype(str)
         self.rep_mass = meta.mass.values.astype(np.float64)
         self.rep_mode = meta['mode'].values.astype(np.int8)
         self.rep_lib = meta.ingest_lib.astype(str).values
+        self.rep_src = meta.src.astype(str).values
         # sqrt-normalised intensities per spectrum (in place, float64)
         it = np.empty(len(self.it_raw), np.float64)
         for r in self.rep:
@@ -126,7 +132,7 @@ class AnalogIndex:
             self._fpc[key] = gen.GetFingerprintAsNumPy(m).astype(bool) if m is not None else np.zeros(2048, bool)
         return self._fpc[key]
 
-    def search(self, spectra, target, exclude_keys=(), exclude_libs=(), min_match=3, top=100):
+    def search(self, spectra, target, exclude_keys=(), exclude_libs=(), min_match=3, top=100, exclude_ext_keys=(), exclude_ext_src=()):
         """spectra: list of (mz, it, mode). Returns DataFrame of best analog per structure: key, sim, shift."""
         best = {}
         lo = np.searchsorted(self.rep_mass, target - self.win); hi = np.searchsorted(self.rep_mass, target + self.win)
@@ -135,6 +141,10 @@ class AnalogIndex:
             sel = sel[~np.isin(self.rep_key[sel], list(exclude_keys))]
         if exclude_libs:
             sel = sel[~np.isin(self.rep_lib[sel], list(exclude_libs))]
+        if exclude_ext_keys:          # offline pseudo-test: hide the query structure's external spectra only
+            sel = sel[~(np.isin(self.rep_key[sel], list(exclude_ext_keys)) & np.isin(self.rep_lib[sel], ['ext', 'mbh']))]
+        if exclude_ext_src:           # leave-source-out: hide every external spectrum from the query's institution/library
+            sel = sel[~(np.isin(self.rep_src[sel], list(exclude_ext_src)) & np.isin(self.rep_lib[sel], ['ext', 'mbh']))]
         for md in (1, -1):
             grp = [(m, i) for m, i, mm in spectra if mm == md]
             if not grp:
